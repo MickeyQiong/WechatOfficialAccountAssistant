@@ -1,50 +1,81 @@
-planning_task:
+plan_task:
   description: >
-    Create a detailed outline for a blog post about {topic}.
+    用户提供了文章标题：{title}
 
-    The outline should include:
-    - A compelling title
-    - An introduction hook
-    - 3-5 main sections with key points to cover in each
-    - A conclusion with a call to action
+    请作为微信公众号内容规划师，完成以下工作：
 
-    Make the outline detailed enough that a writer can produce
-    a full blog post from it without additional research.
+    1. **标题优化**：分析原标题，如有必要进行优化，使其更适合微信传播
+       （控制在 30 字以内，有吸引力但不标题党）
+    2. **受众分析**：判断这篇文章的目标读者是谁，他们关心什么
+    3. **角度选择**：确定文章的切入角度（科普、观点、教程、盘点、故事等）
+    4. **结构大纲**：设计文章结构，包括：
+       - 开头钩子（前 100 字如何抓住读者）
+       - 3-5 个主体段落（每段的主题和要点）
+       - 结尾（总结 + 引导关注/互动）
+    5. **关键词建议**：建议 3-5 个文章关键词
+
+    ⚠️ 注意：微信文章的特点是"短段落、多留白、配图多"，
+    请在规划时考虑这些特点。
   expected_output: >
-    A structured blog post outline with a title, introduction notes,
-    detailed section breakdowns, and conclusion notes.
-  agent: planner
+    一份详细的文章规划报告，包含：
+    - 优化后的标题
+    - 受众与角度分析
+    - 完整结构大纲（每部分标注预计字数）
+    - 关键词建议
+  agent: content_planner
 
-writing_task:
+search_task:
   description: >
-    Using the outline provided, write a full blog post about {topic}.
+    基于以下信息进行网络搜索：
 
-    Requirements:
-    - Follow the outline structure closely
-    - Write in a clear, engaging, and conversational tone
-    - Each section should be 2-3 paragraphs
-    - Include a strong introduction and conclusion
-    - Target around 800-1200 words
+    - 文章标题：{title}
+    - 内容大纲：由规划任务产出
+
+    搜索方向包括：
+    1. **最新资讯**：近期的相关新闻和动态
+    2. **权威数据**：行业报告、统计数据、研究结论
+    3. **典型案例**：与主题相关的实际案例或故事
+    4. **专家观点**：行业专家的评论和见解
+    5. **背景知识**：帮助读者理解的基础知识
+
+    为每个搜索结果标注来源和可信度评估。
   expected_output: >
-    A complete blog post in markdown format, ready for editing.
-    The post should follow the outline and be well-written with
-    clear transitions between sections.
-  agent: writer
+    一份结构化的搜索素材报告，包含按类别整理的搜索结果，
+    每条包含标题、摘要、来源链接和可信度评估。
+  agent: web_searcher
+  context:
+    - plan_task
 
-editing_task:
+write_task:
   description: >
-    Review and edit the blog post about {topic}.
+    根据以下素材撰写一篇完整的微信公众号文章：
 
-    Focus on:
-    - Fixing any grammar or spelling errors
-    - Improving sentence clarity and flow
-    - Ensuring consistent tone throughout
-    - Strengthening the introduction and conclusion
-    - Removing any redundancy
+    - 文章标题（已由规划师完成）：见大纲
+    - 内容大纲：见规划任务产出
+    - 搜索素材：见搜索任务产出
 
-    Do not rewrite the post — refine and polish it.
+    写作要求：
+    1. **开头（约 150 字）**：用一个抓人的钩子开始——可以是一个问题、
+       一个令人惊讶的数据、一个短故事或一个场景描写
+    2. **正文（约 1200-2000 字）**：按照大纲展开，每个小节 2-4 个短段落，
+       段落之间用空行分隔。善用小标题、加粗、列表等格式提升可读性
+    3. **结尾（约 100 字）**：总结核心观点 + 引导读者互动
+       （如"你怎么看？欢迎留言讨论"）
+    4. **风格**：亲切自然、有温度、像在跟朋友聊天，避免说教感
+    5. **格式**：Markdown 格式，短文段（每段不超过 4 行），多用换行
+
+    ⚠️ 微信写作铁律：
+    - 第一句话决定读者是否继续读
+    - 每个段落不超过手机屏幕的 4 行
+    - 要有"金句"——可被截图分享的句子
   expected_output: >
-    The final, polished blog post in markdown format without '```'.
-    Publication-ready with clean formatting and professional prose.
-  agent: editor
-  output_file: output/post.md
+    一篇完整的微信公众号文章，Markdown 格式，包含：
+    - 优化后的标题（H1）
+    - 引导语
+    - 分段正文（H2 小标题 + 短文段）
+    - 结尾互动引导
+    - 标注需要配图的位置（用 [插图建议: ...] 标记）
+  agent: article_writer
+  context:
+    - plan_task
+    - search_task

@@ -1,11 +1,16 @@
 [project]
 name = "assistant_flow"
 version = "0.1.0"
-description = "assistant-flow using crewAI"
-authors = [{ name = "Your Name", email = "you@example.com" }]
+description = "微信公众号文章发表助手 - WeChat Official Account Article Publishing Assistant"
+authors = [{ name = "米奇", email = "921844591@qq.com" }]
 requires-python = ">=3.10,<3.14"
 dependencies = [
-    "crewai[tools]==1.14.5a2"
+    "crewai[tools]>=1.14.6,<2.0.0",
+    "langchain>=0.3.0",
+    "langchain-openai>=0.2.0",
+    "langchain-community>=0.3.0",
+    "duckduckgo-search>=7.0.0",
+    "ddgs>=9.14.4",
 ]
 
 [project.scripts]

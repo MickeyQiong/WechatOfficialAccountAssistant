@@ -1,75 +1,88 @@
-from crewai import Agent, Crew, Process, Task
+from crewai import Agent, Crew, LLM, Process, Task
 from crewai.agents.agent_builder.base_agent import BaseAgent
 from crewai.project import CrewBase, agent, crew, task
 
-# If you want to run a snippet of code before or after the crew starts,
-# you can use the @before_kickoff and @after_kickoff decorators
-# https://docs.crewai.com/concepts/crews#example-crew-class-with-decorators
+from assistant_flow.src.assistant_flow.tools.langchain_tools import WebSearchTool
 
 
 @CrewBase
 class ContentCrew:
-    """Content Crew"""
+    """内容创作团队 — 规划 + 搜索 + 撰写
+
+    LLM 配置: 使用 CrewAI LLM（底层通过 litellm 调用 OpenAI API，
+    与 langchain_openai.ChatOpenAI 使用相同的 API 端点）。
+    """
 
     agents: list[BaseAgent]
     tasks: list[Task]
 
-    # Learn more about YAML configuration files here:
-    # Agents: https://docs.crewai.com/concepts/agents#yaml-configuration-recommended
-    # Tasks: https://docs.crewai.com/concepts/tasks#yaml-configuration-recommended
     agents_config = "config/agents.yaml"
     tasks_config = "config/tasks.yaml"
 
-    # If you would like to add tools to your crew, you can learn more about it here:
-    # https://docs.crewai.com/concepts/agents#agent-tools
-    @agent
-    def planner(self) -> Agent:
-        return Agent(
-            config=self.agents_config["planner"],  # type: ignore[index]
+    # ── LLM 配置（使用 crewai.LLM，底层 litellm 与 langchain_openai 同 API）──
+    def _llm(self):
+        return LLM(
+            model="openai/gpt-4o",
+            temperature=0.7,
         )
+
+    # ── Agents ────────────────────────────────────────────────────
 
     @agent
-    def writer(self) -> Agent:
+    def content_planner(self) -> Agent:
         return Agent(
-            config=self.agents_config["writer"],  # type: ignore[index]
+            config=self.agents_config["content_planner"],  # type: ignore[index]
+            llm=self._llm(),
+            verbose=True,
         )
 
     @agent
-    def editor(self) -> Agent:
+    def web_searcher(self) -> Agent:
         return Agent(
-            config=self.agents_config["editor"],  # type: ignore[index]
+            config=self.agents_config["web_searcher"],  # type: ignore[index]
+            llm=self._llm(),
+            tools=[WebSearchTool()],
+            verbose=True,
         )
 
-    # To learn more about structured task outputs,
-    # task dependencies, and task callbacks, check out the documentation:
-    # https://docs.crewai.com/concepts/tasks#overview-of-a-task
+    @agent
+    def article_writer(self) -> Agent:
+        return Agent(
+            config=self.agents_config["article_writer"],  # type: ignore[index]
+            llm=self._llm(),
+            verbose=True,
+        )
+
+    # ── Tasks ─────────────────────────────────────────────────────
+
     @task
-    def planning_task(self) -> Task:
+    def plan_task(self) -> Task:
         return Task(
-            config=self.tasks_config["planning_task"],  # type: ignore[index]
+            config=self.tasks_config["plan_task"],  # type: ignore[index]
         )
 
     @task
-    def writing_task(self) -> Task:
+    def search_task(self) -> Task:
         return Task(
-            config=self.tasks_config["writing_task"],  # type: ignore[index]
+            config=self.tasks_config["search_task"],  # type: ignore[index]
+            context=[self.plan_task()],
         )
 
     @task
-    def editing_task(self) -> Task:
+    def write_task(self) -> Task:
         return Task(
-            config=self.tasks_config["editing_task"],  # type: ignore[index]
+            config=self.tasks_config["write_task"],  # type: ignore[index]
+            context=[self.plan_task(), self.search_task()],
         )
+
+    # ── Crew ──────────────────────────────────────────────────────
 
     @crew
     def crew(self) -> Crew:
-        """Creates the Content Crew"""
-        # To learn how to add knowledge sources to your crew, check out the documentation:
-        # https://docs.crewai.com/concepts/knowledge#what-is-knowledge
-
+        """创建内容创作团队。"""
         return Crew(
-            agents=self.agents,  # Automatically created by the @agent decorator
-            tasks=self.tasks,  # Automatically created by the @task decorator
+            agents=self.agents,
+            tasks=self.tasks,
             process=Process.sequential,
             verbose=True,
         )
