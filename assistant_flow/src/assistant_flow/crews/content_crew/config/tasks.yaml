@@ -79,3 +79,19 @@ write_task:
   context:
     - plan_task
     - search_task
+
+generate_image_task:
+  description: >
+    根据文章标题：{title}（及可选的大纲或写作稿），为微信文章生成配图创意与制作规范：
+    - 输出 3 套可选视觉方案（首图、内文插图、配图样式），每套包含画面构图、主色与配色、风格（摄影/插画/扁平化等）、
+      尺寸与裁剪建议、文字/图标占位说明。
+    - 为每张示例图提供可直接用于图像生成模型的 prompt 与否定词，以及推荐模型和关键生成参数（如分辨率、样式tag、CFG/采样参数等）。
+    - 提供每张图的替代文本（alt）、用途说明、版权/授权与使用建议。
+    - 如需，可给出可运行的示例命令或生成设置（JSON 或命令格式）。
+  expected_output: >
+    结构化的图片素材提案：包含 3 套方案（每套含 prompt、否定词、参数、尺寸、alt 文本与使用场景），
+    以及一组可复制的示例 prompt/参数与版权说明。
+  agent: image_generator
+  context:
+    - plan_task
+    - write_task

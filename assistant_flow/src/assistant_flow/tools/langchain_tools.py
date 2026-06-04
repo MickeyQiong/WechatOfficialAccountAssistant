@@ -7,11 +7,16 @@ Each tool is a CrewAI BaseTool that uses LangChain components internally:
   - WeChatFormatValidatorTool: 微信公众号格式校验
 """
 
-from typing import ClassVar, Type
+import os
+import re
+from typing import ClassVar, Optional, Type
 
 from pydantic import BaseModel, Field
 
 from crewai.tools import BaseTool
+
+from dotenv import load_dotenv
+load_dotenv()  # 加载 .env 文件中的环境变量
 
 
 # ---------------------------------------------------------------------------
@@ -145,7 +150,9 @@ class ImageGenerationTool(BaseTool):
 
             # 使用 LangChain DALL-E wrapper
             dalle = DallEAPIWrapper(
-                model="dall-e-3",
+                model_name="dall-e-3",
+                openai_api_key=os.getenv("OPENAI_API_KEY"),
+                openai_proxy=os.getenv("OPENAI_PROXY"),
                 size="1024x1024",
                 quality="standard",
                 n=1,
@@ -181,6 +188,10 @@ class WeChatFormatInput(BaseModel):
     content: str = Field(
         ...,
         description="需要校验格式的微信公众号文章内容（Markdown 格式）。",
+    )
+    cover_image_url: Optional[str] = Field(
+        None,
+        description="可选的封面图 URL，用于上传草稿封面缩略图。",
     )
 
 
@@ -272,3 +283,250 @@ class WeChatFormatValidatorTool(BaseTool):
             report += "\n### 🎉 全部通过！文章格式合规。\n"
 
         return report
+
+class PublishToDraftTool(BaseTool):
+    """草稿箱发布工具 — 将文章内容发布到微信公众号草稿箱。"""
+
+    name: str = "publish_to_draft"
+    description: str = (
+        "将文章内容发布到微信公众号草稿箱。"
+        "需要提供文章标题、正文内容和封面图 URL。"
+        "返回发布结果和草稿 ID。"
+    )
+    args_schema: Type[BaseModel] = WeChatFormatInput
+
+    def _run(self, content: str, cover_image_url: Optional[str] = None) -> str:
+        """执行发布操作并返回结果。"""
+        try:
+            import requests
+        except ImportError:
+            return (
+                "[模拟模式] 发布草稿需要 requests 包。"
+                " 请运行: pip install requests"
+            )
+
+        try:
+            access_token = self._get_access_token()
+            title, digest = self._extract_title_and_digest(content)
+            if not title:
+                return (
+                    "❌ 发布失败：未能从内容中提取文章标题。"
+                    "请在 Markdown 中以 '# 标题' 开头。"
+                )
+
+            # 将 Markdown 转为微信可接受的 HTML 并处理内嵌图片（上传至微信并替换 URL）
+            html_content = self._markdown_to_wechat_html(content)
+            html_content = self._process_content_images(access_token, html_content)
+
+            article = {
+                "title": title,
+                "content": html_content,
+                "digest": digest,
+                "show_cover_pic": 1 if cover_image_url else 0,
+                "content_source_url": os.getenv("WECHAT_CONTENT_SOURCE_URL", ""),
+            }
+
+            if cover_image_url:
+                article["thumb_media_id"] = self._upload_cover_image(
+                    access_token, cover_image_url
+                )
+
+            draft_id = self._create_draft(access_token, article)
+            return (
+                f"✅ 草稿发布成功！\n"
+                f"草稿 ID: {draft_id}\n"
+                f"请登录微信公众号后台草稿箱查看草稿。"
+            )
+
+        except Exception as exc:
+            return f"❌ 发布失败：{str(exc)}"
+
+    def _get_access_token(self) -> str:
+        """从环境变量获取或调用微信接口获取 access_token。"""
+        if os.getenv("WECHAT_ACCESS_TOKEN"):
+            return os.getenv("WECHAT_ACCESS_TOKEN")
+
+        appid = os.getenv("WECHAT_APPID")
+        secret = os.getenv("WECHAT_APPSECRET")
+        if not appid or not secret:
+            raise ValueError(
+                "缺少微信认证配置，请设置 WECHAT_APPID 和 WECHAT_APPSECRET 环境变量。"
+            )
+
+        import requests
+
+        token_url = (
+            "https://api.weixin.qq.com/cgi-bin/token"
+            f"?grant_type=client_credential&appid={appid}&secret={secret}"
+        )
+        response = requests.get(token_url, timeout=15)
+        data = response.json()
+        if response.status_code != 200 or "access_token" not in data:
+            raise ValueError(
+                "获取 access_token 失败："
+                f"{data.get('errmsg', data)}"
+            )
+        return data["access_token"]
+
+    def _create_draft(self, access_token: str, article: dict) -> str:
+        """调用微信草稿接口创建草稿。"""
+        import requests
+
+        draft_url = (
+            "https://api.weixin.qq.com/cgi-bin/draft/add"
+            f"?access_token={access_token}"
+        )
+        response = requests.post(draft_url, json={"articles": [article]}, timeout=20)
+        data = response.json()
+        if data.get("errcode", 0) != 0:
+            raise ValueError(
+                "草稿创建失败："
+                f"{data.get('errmsg', data.get('errcode'))}"
+            )
+
+        draft_id = data.get("media_id") or data.get("draft_id")
+        if not draft_id:
+            raise ValueError("草稿创建成功，但未返回草稿 ID。")
+        return draft_id
+
+    def _upload_cover_image(self, access_token: str, image_url: str) -> str:
+        """上传封面图到微信素材接口，返回 media_id。"""
+        import requests
+
+        # 使用永久素材接口上传封面，返回 media_id（草稿接口期望永久素材 media_id）
+        upload_url = (
+            "https://api.weixin.qq.com/cgi-bin/material/add_material"
+            f"?access_token={access_token}&type=image"
+        )
+
+        if image_url.startswith("http://") or image_url.startswith("https://"):
+            response = requests.get(image_url, timeout=20)
+            if response.status_code != 200:
+                raise ValueError(
+                    f"下载封面图失败，HTTP {response.status_code}。"
+                )
+            file_data = response.content
+            file_name = "cover.jpg"
+        else:
+            if not os.path.exists(image_url):
+                raise ValueError(f"封面图路径不存在：{image_url}")
+            with open(image_url, "rb") as f:
+                file_data = f.read()
+            file_name = os.path.basename(image_url)
+
+        files = {"media": (file_name, file_data, "image/jpeg")}
+        response = requests.post(upload_url, files=files, timeout=60)
+        data = response.json()
+        if data.get("errcode", 0) != 0:
+            raise ValueError(
+                "封面图上传失败："
+                f"{data.get('errmsg', data.get('errcode'))}"
+            )
+        if "media_id" not in data:
+            raise ValueError("封面图上传成功，但未返回 media_id。")
+        return data["media_id"]
+
+    def _process_content_images(self, access_token: str, html_content: str) -> str:
+        """查找 HTML 中的 <img src="...">，上传到微信的 uploadimg 接口并替换为微信返回的 URL。"""
+        import requests
+
+        def upload_image_bytes(bdata, filename="image.jpg"):
+            uploadimg_url = (
+                "https://api.weixin.qq.com/cgi-bin/media/uploadimg"
+                f"?access_token={access_token}"
+            )
+            files = {"media": (filename, bdata, "image/jpeg")}
+            resp = requests.post(uploadimg_url, files=files, timeout=60)
+            data = resp.json()
+            if resp.status_code != 200 or "url" not in data:
+                raise ValueError(f"上传内文图片失败: {data}")
+            return data["url"]
+
+        # 使用正则找到所有 img 标签 src
+        matches = re.findall(r'<img[^>]+src=["\']([^"\']+)["\']', html_content)
+        for src in matches:
+            try:
+                if src.startswith("http://") or src.startswith("https://"):
+                    r = requests.get(src, timeout=20)
+                    if r.status_code != 200:
+                        continue
+                    new_url = upload_image_bytes(r.content, os.path.basename(src))
+                else:
+                    # 本地路径
+                    if not os.path.exists(src):
+                        continue
+                    with open(src, "rb") as f:
+                        new_url = upload_image_bytes(f.read(), os.path.basename(src))
+
+                # 替换原有 src 为微信返回的 url
+                html_content = html_content.replace(src, new_url)
+            except Exception:
+                # 上传失败则跳过，不影响整体流程
+                continue
+
+        return html_content
+
+    def _extract_title_and_digest(self, content: str) -> tuple[str, str]:
+        """从 Markdown 内容中提取标题和摘要。"""
+        lines = content.splitlines()
+        title = ""
+        for line in lines:
+            if line.startswith("# "):
+                title = line[2:].strip()
+                break
+
+        if not title:
+            for line in lines:
+                if line.strip():
+                    title = line.strip()
+                    break
+
+        plain_text = re.sub(r"!\[[^\]]*\]\([^\)]+\)", "", content)
+        plain_text = re.sub(r"\*\*|__|`|\*|#", "", plain_text)
+        digest = " ".join(plain_text.split())[:120]
+        return title, digest
+
+    def _markdown_to_wechat_html(self, content: str) -> str:
+        """将 Markdown 内容转换为简化的微信 HTML 格式。"""
+        content = content.strip()
+        content = re.sub(r"!\[([^\]]*)\]\(([^\)]+)\)", r"<img src=\"\2\" alt=\"\1\" />", content)
+        content = re.sub(r"\*\*([^\*]+)\*\*", r"<strong>\1</strong>", content)
+        content = re.sub(r"__([^_]+)__", r"<strong>\1</strong>", content)
+        content = re.sub(r"`([^`]+)`", r"<code>\1</code>", content)
+
+        html_lines = []
+        in_list = False
+        for line in content.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                if in_list:
+                    html_lines.append("</ul>")
+                    in_list = False
+                continue
+
+            if stripped.startswith("## "):
+                if in_list:
+                    html_lines.append("</ul>")
+                    in_list = False
+                html_lines.append(f"<h2>{stripped[3:].strip()}</h2>")
+            elif stripped.startswith("# "):
+                if in_list:
+                    html_lines.append("</ul>")
+                    in_list = False
+                html_lines.append(f"<h1>{stripped[2:].strip()}</h1>")
+            elif stripped.startswith("* ") or stripped.startswith("- "):
+                if not in_list:
+                    html_lines.append("<ul>")
+                    in_list = True
+                item = stripped[2:].strip()
+                html_lines.append(f"<li>{item}</li>")
+            else:
+                if in_list:
+                    html_lines.append("</ul>")
+                    in_list = False
+                html_lines.append(f"<p>{stripped}</p>")
+
+        if in_list:
+            html_lines.append("</ul>")
+
+        return "\n".join(html_lines)

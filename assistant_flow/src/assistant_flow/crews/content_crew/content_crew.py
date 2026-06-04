@@ -2,7 +2,7 @@ from crewai import Agent, Crew, LLM, Process, Task
 from crewai.agents.agent_builder.base_agent import BaseAgent
 from crewai.project import CrewBase, agent, crew, task
 
-from assistant_flow.src.assistant_flow.tools.langchain_tools import WebSearchTool
+from assistant_flow.tools.langchain_tools import WebSearchTool
 
 
 @CrewBase
