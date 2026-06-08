@@ -12,6 +12,8 @@ dependencies = [
     "duckduckgo-search>=7.0.0",
     "ddgs>=9.14.4",
     "requests>=2.31.0",
+    "llama-index>=0.12.0",
+    "llama-index-embeddings-openai>=0.3.0",
 ]
 
 [project.scripts]
