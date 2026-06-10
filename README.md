@@ -162,6 +162,92 @@ print(flow.state.final_article)  # 结构化访问
 
 ---
 
+## 🐳 Docker 部署
+
+### 构建镜像
+
+```bash
+cd assistant_flow
+docker build -t wechat-article-assistant .
+```
+
+### 运行容器
+
+**使用 `.env` 文件注入环境变量（推荐）：**
+
+```bash
+docker run --rm \
+  --env-file .env \
+  -v $(pwd)/output:/app/output \
+  wechat-article-assistant
+```
+
+**手动指定环境变量：**
+
+```bash
+docker run --rm \
+  -e OPENAI_API_KEY="sk-xxx" \
+  -e OPENAI_BASE_URL="https://api.wlai.vip/v1" \
+  -e WECHAT_APP_ID="wx4f..." \
+  -e WECHAT_APP_SECRET="abc..." \
+  -v $(pwd)/output:/app/output \
+  wechat-article-assistant
+```
+
+> 💡 挂载 `output` 目录可将生成的文章持久化到宿主机。
+
+### 指定文章标题
+
+```bash
+docker run --rm \
+  --env-file .env \
+  -v $(pwd)/output:/app/output \
+  wechat-article-assistant uv run run_with_trigger '{"title": "你的文章标题"}'
+```
+
+### 生成流程图
+
+```bash
+docker run --rm \
+  --env-file .env \
+  -v $(pwd)/output:/app/output \
+  wechat-article-assistant uv run plot
+```
+
+### Docker Compose（可选）
+
+创建 `docker-compose.yml`：
+
+```yaml
+services:
+  wechat-assistant:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - ./output:/app/output
+      - ./knowledge:/app/knowledge
+```
+
+运行：
+
+```bash
+docker compose up
+```
+
+### 环境变量说明
+
+| 变量                  | 必填 | 说明                                      |
+| --------------------- | ---- | ----------------------------------------- |
+| `OPENAI_API_KEY`      | ✅   | OpenAI API 密钥                           |
+| `OPENAI_BASE_URL`     | ❌   | OpenAI 兼容 API 地址（默认官方地址）      |
+| `MODEL`               | ❌   | 模型名称（默认 `gpt-4o`）                 |
+| `WECHAT_APP_ID`       | ❌   | 微信公众号 AppID（发布草稿时需要）        |
+| `WECHAT_APP_SECRET`   | ❌   | 微信公众号 AppSecret（发布草稿时需要）    |
+| `WECHAT_ARTICLES_DIR` | ❌   | 往期文章目录（默认 `knowledge/articles/`） |
+
+---
+
 ## 📁 项目结构
 
 ```
@@ -171,6 +257,8 @@ WechatOfficialAccountAssistant/
 └── assistant_flow/
     ├── pyproject.toml                    # 项目配置与依赖
     ├── uv.lock                           # 锁定依赖版本
+    ├── Dockerfile                        # Docker 镜像定义
+    ├── .dockerignore                     # Docker 忽略文件
     ├── .env                              # 环境变量（需自行创建）
     ├── AGENTS.md                         # CrewAI 开发参考（AI 助手用）
     ├── knowledge/                        # 往期文章知识库

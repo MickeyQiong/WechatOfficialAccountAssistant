@@ -26,8 +26,8 @@ from pydantic import BaseModel, Field
 
 from crewai.flow import Flow, listen, start
 
-from assistant_flow.src.assistant_flow.crews.content_crew.content_crew import ContentCrew
-from assistant_flow.src.assistant_flow.crews.publishing_crew.publishing_crew import PublishingCrew
+from assistant_flow.crews.content_crew.content_crew import ContentCrew
+from assistant_flow.crews.publishing_crew.publishing_crew import PublishingCrew
 
 
 # ---------------------------------------------------------------------------
